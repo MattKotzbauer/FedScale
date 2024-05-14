@@ -34,6 +34,11 @@ class ClientManager:
             with open(args.device_avail_file, 'rb') as fin:
                 self.user_trace = pickle.load(fin)
             self.user_trace_keys = list(self.user_trace.keys())
+        
+        self.client_gradients = {}
+        self.cluster_assignments = {}
+        self.cluster_centers = {}
+        
 
     def register_client(self, host_id: int, client_id: int, size: int, speed: Dict[str, float],
                         duration: float = 1) -> None:
@@ -83,6 +88,9 @@ class ClientManager:
             )
             self.ucb_sampler.update_duration(
                 client_id, exe_cost['computation'] + exe_cost['communication'])
+    
+    def registerGradient(self, client_id, gradient):
+        self.client_gradients[client_id] = gradient
 
     def get_completion_time(self, client_id, batch_size, local_steps, upload_size, download_size):
         return self.client_metadata[self.getUniqueId(0, client_id)].get_completion_time(
