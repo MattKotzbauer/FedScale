@@ -1,8 +1,11 @@
 import logging
 import math
+import numpy as np
 import pickle
 from random import Random
 from typing import Dict, List
+from scipy.cluster.hierarchy import linkage, fcluster
+
 
 from fedscale.cloud.internal.client_metadata import ClientMetadata
 
@@ -38,7 +41,7 @@ class ClientManager:
         self.client_gradients = {}
         self.cluster_assignments = {}
         self.cluster_centers = {}
-        
+
 
     def register_client(self, host_id: int, client_id: int, size: int, speed: Dict[str, float],
                         duration: float = 1) -> None:
@@ -68,6 +71,8 @@ class ClientManager:
                              'duration': duration,
                              }
                 self.ucb_sampler.register_client(client_id, feedbacks=feedbacks)
+                # init cluster
+                self.cluster_assignments[client_id] = 0
         else:
             del self.client_metadata[uniqueId]
 
@@ -204,6 +209,32 @@ class ClientManager:
 
         return clients_online
 
+    def gradient_based_cluster(self): 
+        gradients = list(self.client_gradients.values())
+        client_ids = list(self.client_gradients.keys())
+
+        # hac distances matrix
+        distance_matrix = np.zeros((len(gradients), len(gradients)))
+        for i in range(len(gradients)):
+            for j in range(i + 1, len(gradients)):
+                distance = 1 - np.dot(gradients[i], gradients[j]) / (np.linalg.norm(gradients[i]) * np.linalg.norm(gradients[j]))
+                distance_matrix[i, j] = distance
+                distance_matrix[j, i] = distance
+
+        # hac
+        Z = linkage(distance_matrix, 'average')
+        cluster_labels = fcluster(Z, t=2, criterion='maxclust')
+
+        # update cluster assignments
+        for client_id, cluster_label in zip(client_ids, cluster_labels):
+            self.cluster_assignments[client_id] = cluster_label
+
+        # update cluster centers
+        for cluster_label in np.unique(cluster_labels):
+            cluster_gradients = [gradients[i] for i in range(len(gradients)) if cluster_labels[i] == cluster_label]
+            self.cluster_centers[cluster_label] = np.mean(cluster_gradients, axis=0)
+
+
     def isClientActive(self, client_id, cur_time):
         return self.client_metadata[self.getUniqueId(0, client_id)].is_active(cur_time)
 
@@ -224,19 +255,37 @@ class ClientManager:
 
         if len(clients_online) <= num_of_clients:
             return clients_online
+        
+        selected_clients = []
 
-        pickled_clients = None
-        clients_online_set = set(clients_online)
+        clusters = np.unique(list(self.cluster_assignments.values()))
+        clients_per_cluster = max(1, num_of_clients // len(clusters))
 
-        if self.mode == "oort" and self.count > 1:
-            pickled_clients = self.ucb_sampler.select_participant(
-                num_of_clients, feasible_clients=clients_online_set)
-        else:
-            self.rng.shuffle(clients_online)
-            client_len = min(num_of_clients, len(clients_online) - 1)
-            pickled_clients = clients_online[:client_len]
+        for cluster in clusters:
+            cluster_clients = [client for client in clients_online if self.cluster_assignments[client] == cluster]
+            self.rng.shuffle(cluster_clients)
+            selected_clients.extend(cluster_clients[:clients_per_cluster])
 
-        return pickled_clients
+        # if we need more, fill with random selection
+        if len(selected_clients) < num_of_clients:
+            remaining_clients = [client for client in clients_online if client not in selected_clients]
+            self.rng.shuffle(remaining_clients)
+            selected_clients.extend(remaining_clients[:num_of_clients - len(selected_clients)])
+
+        return selected_clients        
+
+        # pickled_clients = None
+        # clients_online_set = set(clients_online)
+
+        # if self.mode == "oort" and self.count > 1:
+        #     pickled_clients = self.ucb_sampler.select_participant(
+        #         num_of_clients, feasible_clients=clients_online_set)
+        # else:
+        #     self.rng.shuffle(clients_online)
+        #     client_len = min(num_of_clients, len(clients_online) - 1)
+        #     pickled_clients = clients_online[:client_len]
+
+        # return pickled_clients
 
     def resampleClients(self, num_of_clients, cur_time=0):
         return self.select_participants(num_of_clients, cur_time)
