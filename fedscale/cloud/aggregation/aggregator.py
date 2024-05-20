@@ -478,6 +478,11 @@ class Aggregator(job_api_pb2_grpc.JobServiceServicer):
             + self.virtual_client_clock[results["client_id"]]["communication"],
         )
 
+        # register gradients
+        if 'gradients' in results:
+            client_id = results['client_id']
+            self.client_manager.registerGradient(client_id, results['gradients'])
+
         # ================== Aggregate weights ======================
         self.update_lock.acquire()
 
