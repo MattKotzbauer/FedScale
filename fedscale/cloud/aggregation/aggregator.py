@@ -245,6 +245,10 @@ class Aggregator(job_api_pb2_grpc.JobServiceServicer):
 
         return client_manager
 
+    def perform_clustering(self):
+        """Perform clustering using HAC method in client_manager.py"""
+        self.client_manager.gradient_based_cluster()
+
     def load_client_profile(self, file_path):
         """For Simulation Mode: load client profiles/traces
 
@@ -444,6 +448,8 @@ class Aggregator(job_api_pb2_grpc.JobServiceServicer):
             list of int: The list of sampled clients id.
 
         """
+        self.perform_clustering()
+
         return sorted(
             self.client_manager.select_participants(
                 int(select_num_participants * overcommitment),
@@ -591,6 +597,9 @@ class Aggregator(job_api_pb2_grpc.JobServiceServicer):
         # dump round completion information to tensorboard
         if len(self.loss_accumulator):
             self.log_train_result(avg_loss)
+
+        # perform clustering before selecting new participants
+        self.perform_clustering()
 
         # update select participants
         self.sampled_participants = self.select_participants(
