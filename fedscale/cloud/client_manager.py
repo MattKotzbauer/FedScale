@@ -38,8 +38,11 @@ class ClientManager:
                 self.user_trace = pickle.load(fin)
             self.user_trace_keys = list(self.user_trace.keys())
         
+        # gradient for each client
         self.client_gradients = {}
+        # cluster asmt for each client
         self.cluster_assignments = {}
+        # center of each cluster
         self.cluster_centers = {}
 
 
@@ -210,6 +213,9 @@ class ClientManager:
         return clients_online
 
     def gradient_based_cluster(self): 
+        """
+        HAC clustering based on gradients
+        """
         gradients = list(self.client_gradients.values())
         client_ids = list(self.client_gradients.keys())
 
